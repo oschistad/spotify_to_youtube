@@ -11,6 +11,7 @@ import time
 import requests
 import spotipy
 from ytmusicapi import YTMusic
+from ytmusicapi.auth.oauth import OAuthCredentials
 
 from spotify_auth import get_spotify_token, REDIRECT_URI
 
@@ -77,14 +78,39 @@ def get_spotify_client():
     return spotipy.Spotify(auth=token["access_token"])
 
 
-def get_ytmusic_client():
-    """Create and return an authenticated YouTube Music client."""
-    browser_json = os.path.join(os.getcwd(), "browser.json")
-    if not os.path.exists(browser_json):
-        print("ERROR: browser.json not found in the current directory.")
-        print("Run 'uv run ytmusicapi browser' to generate it, then try again.")
+def get_ytmusic_search_client():
+    """
+    Unauthenticated YouTube Music client for searching.
+    Search does not require auth and is more reliable without it.
+    """
+    return YTMusic()
+
+
+def get_ytmusic_auth_client():
+    """
+    Authenticated YouTube Music client (OAuth) for subscribing.
+    Requires an oauth.json created via 'uv run ytmusicapi oauth', plus the
+    Google OAuth client credentials it was created with.
+    """
+    oauth_json = os.path.join(os.getcwd(), "oauth.json")
+    if not os.path.exists(oauth_json):
+        print("ERROR: oauth.json not found in the current directory.")
+        print("Set up YouTube Music auth first — see the README 'YouTube Music auth' section.")
         sys.exit(1)
-    return YTMusic(browser_json)
+
+    client_id = os.environ.get("YT_OAUTH_CLIENT_ID")
+    client_secret = os.environ.get("YT_OAUTH_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        print("ERROR: YT_OAUTH_CLIENT_ID and YT_OAUTH_CLIENT_SECRET must be set.")
+        print("These are the Google Cloud OAuth client credentials used to create oauth.json.")
+        sys.exit(1)
+
+    return YTMusic(
+        oauth_json,
+        oauth_credentials=OAuthCredentials(
+            client_id=client_id, client_secret=client_secret
+        ),
+    )
 
 
 def fetch_spotify_followed_artists(sp, limit=None):
@@ -134,9 +160,7 @@ def find_youtube_artist(ytmusic, artist_name):
     try:
         results = ytmusic.search(artist_name, filter="artists")
     except Exception as e:
-        msg = str(e)
-        hint = " (browser.json may be expired — re-run 'uv run ytmusicapi browser')" if "Expecting value" in msg else ""
-        print(f"    WARNING: Search failed for '{artist_name}': {type(e).__name__}: {msg}{hint}")
+        print(f"    WARNING: Search failed for '{artist_name}': {type(e).__name__}: {e}")
         return None, None
 
     if not results:
@@ -160,7 +184,9 @@ def migrate(dry_run=False, limit=None):
     load_env()
 
     sp = get_spotify_client()
-    ytmusic = get_ytmusic_client()
+    search_client = get_ytmusic_search_client()
+    # Only the subscribe step needs auth — skip it entirely in dry-run.
+    auth_client = None if dry_run else get_ytmusic_auth_client()
 
     artists = fetch_spotify_followed_artists(sp, limit=limit)
 
@@ -173,7 +199,7 @@ def migrate(dry_run=False, limit=None):
         name = artist["name"]
         print(f"[{i}/{len(artists)}] Looking up: {name}")
 
-        channel_id, matched_name = find_youtube_artist(ytmusic, name)
+        channel_id, matched_name = find_youtube_artist(search_client, name)
         time.sleep(0.5)
 
         if not channel_id:
@@ -190,7 +216,7 @@ def migrate(dry_run=False, limit=None):
             print(f"    [DRY RUN] Would subscribe to {matched_name}")
         else:
             try:
-                ytmusic.subscribe_artists([channel_id])
+                auth_client.subscribe_artists([channel_id])
                 print(f"    Subscribed!")
                 subscribed.append((name, matched_name))
             except Exception as e:

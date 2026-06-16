@@ -53,17 +53,31 @@ export SPOTIFY_CLIENT_SECRET=your_client_secret
 
 ### 4. YouTube Music auth setup
 
-`ytmusicapi` is installed as part of `uv sync`. To generate the auth file it needs, run:
+Searching YouTube Music needs no auth. Only the **subscribe** step is
+authenticated, and it uses OAuth (device flow), which works well over SSH.
+
+**a. Create a Google OAuth client**
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create (or pick) a project.
+2. Under **APIs & Services → Library**, enable the **YouTube Data API v3**.
+3. Under **APIs & Services → Credentials**, click **Create Credentials → OAuth client ID**.
+4. Choose application type **TV and Limited Input devices**.
+5. Copy the resulting **Client ID** and **Client Secret** into your `.env`:
+
+   ```
+   YT_OAUTH_CLIENT_ID=your_google_oauth_client_id
+   YT_OAUTH_CLIENT_SECRET=your_google_oauth_client_secret
+   ```
+
+**b. Authorise your YouTube Music account**
 
 ```bash
-uv run ytmusicapi browser
+uv run ytmusicapi oauth --client-id "$YT_OAUTH_CLIENT_ID" --client-secret "$YT_OAUTH_CLIENT_SECRET"
 ```
 
-Follow the on-screen instructions (paste headers from a YouTube Music request):
-
-This creates `browser.json` in your current directory. Keep this file private — it contains your session credentials.
-
-> **How to get the headers:** Open [music.youtube.com](https://music.youtube.com) in your browser, open DevTools (F12), go to the Network tab, reload the page, click on any request to `music.youtube.com`, and copy the request headers as instructed by the `ytmusicapi browser` prompt.
+This prints a URL and a code — open the URL on any device, sign in with the
+Google account tied to your YouTube Music, and enter the code. It writes
+`oauth.json` to the current directory. Keep this file private.
 
 ## Running the script
 
