@@ -13,13 +13,13 @@ Migrates your Spotify followed artists to YouTube Music subscriptions.
 ### 1. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 Optionally install `python-dotenv` to use a `.env` file:
 
 ```bash
-pip install python-dotenv
+uv add python-dotenv
 ```
 
 ### 2. Spotify app setup
