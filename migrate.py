@@ -6,6 +6,7 @@ Migrate followed artists from Spotify to YouTube Music subscriptions.
 import argparse
 import os
 import sys
+import time
 
 import requests
 import spotipy
@@ -133,7 +134,7 @@ def find_youtube_artist(ytmusic, artist_name):
     try:
         results = ytmusic.search(artist_name, filter="artists")
     except Exception as e:
-        print(f"    WARNING: Search failed for '{artist_name}': {e}")
+        print(f"    WARNING: Search failed for '{artist_name}': {type(e).__name__}: {e}")
         return None, None
 
     if not results:
@@ -171,6 +172,7 @@ def migrate(dry_run=False, limit=None):
         print(f"[{i}/{len(artists)}] Looking up: {name}")
 
         channel_id, matched_name = find_youtube_artist(ytmusic, name)
+        time.sleep(0.5)
 
         if not channel_id:
             print(f"    NOT FOUND on YouTube Music")
