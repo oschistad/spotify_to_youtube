@@ -7,9 +7,11 @@ import argparse
 import os
 import sys
 
+import requests
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 from ytmusicapi import YTMusic
+
+from spotify_auth import get_spotify_token, REDIRECT_URI
 
 
 def load_env():
@@ -21,24 +23,57 @@ def load_env():
         pass  # dotenv not installed; rely on environment variables directly
 
 
+CACHE_PATH = ".spotify_token.json"
+
+
 def get_spotify_client():
     """Create and return an authenticated Spotify client."""
+    import json
+    import time
+
     client_id = os.environ.get("SPOTIFY_CLIENT_ID")
     client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
-    redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "http://localhost:8888/callback")
 
     if not client_id or not client_secret:
         print("ERROR: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set.")
         print("Copy .env.example to .env and fill in your credentials.")
         sys.exit(1)
 
-    auth_manager = SpotifyOAuth(
-        client_id=client_id,
-        client_secret=client_secret,
-        redirect_uri=redirect_uri,
-        scope="user-follow-read",
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
+    scope = "user-follow-read"
+    token = None
+
+    # Load cached token
+    if os.path.exists(CACHE_PATH):
+        with open(CACHE_PATH) as f:
+            token = json.load(f)
+
+    # Refresh if expired
+    if token and token.get("expires_at", 0) < time.time() + 60:
+        resp = requests.post(
+            "https://accounts.spotify.com/api/token",
+            data={"grant_type": "refresh_token", "refresh_token": token["refresh_token"]},
+            auth=(client_id, client_secret),
+        )
+        if resp.ok:
+            refreshed = resp.json()
+            token["access_token"] = refreshed["access_token"]
+            token["expires_at"] = time.time() + refreshed["expires_in"]
+            if "refresh_token" in refreshed:
+                token["refresh_token"] = refreshed["refresh_token"]
+            with open(CACHE_PATH, "w") as f:
+                json.dump(token, f)
+        else:
+            token = None  # force re-auth
+
+    # Full auth flow if no valid token
+    if not token:
+        import time as _time
+        token = get_spotify_token(client_id, client_secret, scope)
+        token["expires_at"] = _time.time() + token.get("expires_in", 3600)
+        with open(CACHE_PATH, "w") as f:
+            json.dump(token, f)
+
+    return spotipy.Spotify(auth=token["access_token"])
 
 
 def get_ytmusic_client():
