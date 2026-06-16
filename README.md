@@ -26,7 +26,7 @@ uv add python-dotenv
 
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in.
 2. Click **Create app**.
-3. Fill in a name and description, then set the **Redirect URI** to `https://localhost:8888/callback`.
+3. Fill in a name and description, then set the **Redirect URI** to `http://127.0.0.1:8888/callback`.
 4. After creation, note your **Client ID** and **Client Secret** from the app settings.
 
 ### 3. Configure Spotify credentials

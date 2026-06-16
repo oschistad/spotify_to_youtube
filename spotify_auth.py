@@ -1,34 +1,22 @@
 #!/usr/bin/env python3
 """
-Custom Spotify OAuth handler with a local HTTPS callback server.
+Spotify OAuth handler with a local HTTP callback server.
 
-Spotify requires HTTPS redirect URIs. This module generates a self-signed
-certificate on the fly and spins up a temporary HTTPS server to capture
-the OAuth callback code.
+Uses http://127.0.0.1 (loopback IP) as the redirect URI — Spotify accepts
+this without requiring HTTPS. Falls back to manual URL paste over SSH.
 """
 
 import http.server
-import ipaddress
 import os
-import socket
-import ssl
-import tempfile
 import threading
 import urllib.parse
 import webbrowser
-from datetime import datetime, timezone, timedelta
 
 import requests
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
 
 
 REDIRECT_PORT = 8888
-REDIRECT_HOST = "localhost"
-REDIRECT_PATH = "/callback"
-REDIRECT_URI = f"https://{REDIRECT_HOST}:{REDIRECT_PORT}{REDIRECT_PATH}"
+REDIRECT_URI = f"http://127.0.0.1:{REDIRECT_PORT}/callback"
 
 _SUCCESS_HTML = b"""<!DOCTYPE html>
 <html><body style="font-family:sans-serif;text-align:center;padding:60px">
@@ -43,53 +31,12 @@ _ERROR_HTML = b"""<!DOCTYPE html>
 </body></html>"""
 
 
-def _generate_self_signed_cert() -> tuple[str, str]:
-    """Generate a temporary self-signed cert and key, return (cert_path, key_path)."""
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, REDIRECT_HOST),
-    ])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(hours=1))
-        .add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName(REDIRECT_HOST),
-                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-            ]),
-            critical=False,
-        )
-        .sign(key, hashes.SHA256())
-    )
-
-    tmp_dir = tempfile.mkdtemp()
-    cert_path = os.path.join(tmp_dir, "cert.pem")
-    key_path = os.path.join(tmp_dir, "key.pem")
-
-    with open(cert_path, "wb") as f:
-        f.write(cert.public_bytes(serialization.Encoding.PEM))
-    with open(key_path, "wb") as f:
-        f.write(key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
-        ))
-
-    return cert_path, key_path
-
-
-def _run_callback_server(code_holder: dict, cert_path: str, key_path: str):
-    """Start a one-shot HTTPS server that captures the OAuth code."""
+def _run_callback_server(code_holder: dict):
+    """Start a one-shot HTTP server on 127.0.0.1 that captures the OAuth code."""
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *args):
-            pass  # suppress request logs
+            pass
 
         def do_GET(self):
             parsed = urllib.parse.urlparse(self.path)
@@ -102,21 +49,15 @@ def _run_callback_server(code_holder: dict, cert_path: str, key_path: str):
                 self.end_headers()
                 self.wfile.write(_SUCCESS_HTML)
             else:
-                error = params.get("error", "unknown")
-                code_holder["error"] = error
+                code_holder["error"] = params.get("error", "unknown")
                 self.send_response(400)
                 self.send_header("Content-Type", "text/html")
                 self.end_headers()
                 self.wfile.write(_ERROR_HTML)
 
-            # Signal the server to stop after this request
             threading.Thread(target=self.server.shutdown).start()
 
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ctx.load_cert_chain(cert_path, key_path)
-
-    server = http.server.HTTPServer((REDIRECT_HOST, REDIRECT_PORT), Handler)
-    server.socket = ctx.wrap_socket(server.socket, server_side=True)
+    server = http.server.HTTPServer(("127.0.0.1", REDIRECT_PORT), Handler)
     server.serve_forever()
 
 
@@ -126,7 +67,7 @@ def _exchange_code(client_id: str, client_secret: str, code: str) -> dict:
         data={
             "grant_type": "authorization_code",
             "code": code,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": REDIRECT_URI,
         },
         auth=(client_id, client_secret),
     )
@@ -141,7 +82,7 @@ def _manual_fallback(auth_url: str) -> str:
     print()
     print(f"  {auth_url}")
     print()
-    print("After logging in, your browser will land on an error page —")
+    print("After logging in, your browser will show a 'connection refused' page —")
     print("that's fine. Copy the full URL from the address bar and paste it below.")
     print()
     redirected = input("Paste redirect URL: ").strip()
@@ -161,13 +102,12 @@ def _is_ssh_session() -> bool:
 def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     """
     Run Spotify Authorization Code flow.
-    Uses a local HTTPS callback server when running locally; falls back to
-    manual URL paste when running over SSH (or if the callback times out).
+    Uses a local HTTP server on 127.0.0.1 when running locally.
+    Falls back to manual URL paste over SSH.
     """
     import secrets
 
     state = secrets.token_urlsafe(16)
-
     auth_url = (
         "https://accounts.spotify.com/authorize"
         f"?client_id={client_id}"
@@ -178,29 +118,19 @@ def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     )
 
     if _is_ssh_session():
-        # No local server needed — user copies the redirect URL from their browser.
-        # Browser will show "connection refused" after auth; that's expected.
         code = _manual_fallback(auth_url)
         return _exchange_code(client_id, client_secret, code)
 
-    cert_path, key_path = _generate_self_signed_cert()
     code_holder: dict = {}
-
     server_thread = threading.Thread(
-        target=_run_callback_server,
-        args=(code_holder, cert_path, key_path),
-        daemon=True,
+        target=_run_callback_server, args=(code_holder,), daemon=True
     )
     server_thread.start()
 
     print("Opening Spotify login in your browser...")
-    print()
-    print("NOTE: Your browser may warn about an untrusted certificate.")
-    print("Click 'Advanced' → 'Proceed to localhost' to continue.")
-    print()
     webbrowser.open(auth_url)
 
-    server_thread.join(timeout=60)
+    server_thread.join(timeout=120)
 
     if "error" in code_holder:
         raise RuntimeError(f"Spotify auth denied: {code_holder['error']}")
