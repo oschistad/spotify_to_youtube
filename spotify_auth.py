@@ -137,19 +137,12 @@ def _exchange_code(client_id: str, client_secret: str, code: str) -> dict:
 def _manual_fallback(auth_url: str) -> str:
     """Ask the user to paste the redirect URL from their browser after auth."""
     print()
-    print("=" * 60)
-    print("MANUAL AUTH FALLBACK")
-    print("=" * 60)
-    print("The automatic callback didn't complete (your browser may have")
-    print("blocked the self-signed certificate).")
+    print("Open this URL in your browser to authorise Spotify:")
     print()
-    print("Steps:")
-    print("  1. Open this URL in your browser:")
-    print(f"     {auth_url}")
-    print("  2. Log in and authorise the app.")
-    print("  3. Your browser will show an error page (can't connect) —")
-    print("     that's fine. Copy the full URL from the address bar.")
-    print("  4. Paste it here and press Enter.")
+    print(f"  {auth_url}")
+    print()
+    print("After logging in, your browser will land on an error page —")
+    print("that's fine. Copy the full URL from the address bar and paste it below.")
     print()
     redirected = input("Paste redirect URL: ").strip()
     parsed = urllib.parse.urlparse(redirected)
@@ -161,14 +154,18 @@ def _manual_fallback(auth_url: str) -> str:
     return params["code"]
 
 
+def _is_ssh_session() -> bool:
+    return bool(os.environ.get("SSH_CLIENT") or os.environ.get("SSH_TTY"))
+
+
 def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     """
-    Run Spotify Authorization Code flow with a local HTTPS callback server.
-    Falls back to manual URL paste if the browser blocks the self-signed cert.
+    Run Spotify Authorization Code flow.
+    Uses a local HTTPS callback server when running locally; falls back to
+    manual URL paste when running over SSH (or if the callback times out).
     """
     import secrets
 
-    cert_path, key_path = _generate_self_signed_cert()
     state = secrets.token_urlsafe(16)
 
     auth_url = (
@@ -180,6 +177,11 @@ def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
         f"&state={state}"
     )
 
+    if _is_ssh_session():
+        code = _manual_fallback(auth_url)
+        return _exchange_code(client_id, client_secret, code)
+
+    cert_path, key_path = _generate_self_signed_cert()
     code_holder: dict = {}
 
     server_thread = threading.Thread(
@@ -201,10 +203,5 @@ def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     if "error" in code_holder:
         raise RuntimeError(f"Spotify auth denied: {code_holder['error']}")
 
-    if "code" in code_holder:
-        code = code_holder["code"]
-    else:
-        # Automatic callback didn't arrive — fall back to manual paste
-        code = _manual_fallback(auth_url)
-
+    code = code_holder.get("code") or _manual_fallback(auth_url)
     return _exchange_code(client_id, client_secret, code)
