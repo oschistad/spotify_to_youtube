@@ -120,10 +120,51 @@ def _run_callback_server(code_holder: dict, cert_path: str, key_path: str):
     server.serve_forever()
 
 
+def _exchange_code(client_id: str, client_secret: str, code: str) -> dict:
+    resp = requests.post(
+        "https://accounts.spotify.com/api/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT_URI,
+        },
+        auth=(client_id, client_secret),
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _manual_fallback(auth_url: str) -> str:
+    """Ask the user to paste the redirect URL from their browser after auth."""
+    print()
+    print("=" * 60)
+    print("MANUAL AUTH FALLBACK")
+    print("=" * 60)
+    print("The automatic callback didn't complete (your browser may have")
+    print("blocked the self-signed certificate).")
+    print()
+    print("Steps:")
+    print("  1. Open this URL in your browser:")
+    print(f"     {auth_url}")
+    print("  2. Log in and authorise the app.")
+    print("  3. Your browser will show an error page (can't connect) —")
+    print("     that's fine. Copy the full URL from the address bar.")
+    print("  4. Paste it here and press Enter.")
+    print()
+    redirected = input("Paste redirect URL: ").strip()
+    parsed = urllib.parse.urlparse(redirected)
+    params = dict(urllib.parse.parse_qsl(parsed.query))
+    if "error" in params:
+        raise RuntimeError(f"Spotify auth denied: {params['error']}")
+    if "code" not in params:
+        raise RuntimeError("No code found in the pasted URL.")
+    return params["code"]
+
+
 def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     """
-    Run the full Spotify OAuth PKCE-less Authorization Code flow with a local
-    HTTPS callback server. Returns the token dict from Spotify.
+    Run Spotify Authorization Code flow with a local HTTPS callback server.
+    Falls back to manual URL paste if the browser blocks the self-signed cert.
     """
     import secrets
 
@@ -148,30 +189,22 @@ def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     )
     server_thread.start()
 
-    print(f"Opening Spotify login in your browser...")
-    print(f"  If the browser doesn't open, visit:\n  {auth_url}")
+    print("Opening Spotify login in your browser...")
     print()
-    print("NOTE: Your browser will warn about an untrusted certificate.")
-    print("This is expected — click 'Advanced' → 'Proceed to localhost' to continue.")
+    print("NOTE: Your browser may warn about an untrusted certificate.")
+    print("Click 'Advanced' → 'Proceed to localhost' to continue.")
     print()
     webbrowser.open(auth_url)
 
-    server_thread.join(timeout=120)
+    server_thread.join(timeout=60)
 
     if "error" in code_holder:
         raise RuntimeError(f"Spotify auth denied: {code_holder['error']}")
-    if "code" not in code_holder:
-        raise RuntimeError("Timed out waiting for Spotify OAuth callback.")
 
-    # Exchange code for token
-    resp = requests.post(
-        "https://accounts.spotify.com/api/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code_holder["code"],
-            "redirect_uri": REDIRECT_URI,
-        },
-        auth=(client_id, client_secret),
-    )
-    resp.raise_for_status()
-    return resp.json()
+    if "code" in code_holder:
+        code = code_holder["code"]
+    else:
+        # Automatic callback didn't arrive — fall back to manual paste
+        code = _manual_fallback(auth_url)
+
+    return _exchange_code(client_id, client_secret, code)
