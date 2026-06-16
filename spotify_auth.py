@@ -28,12 +28,7 @@ from cryptography.x509.oid import NameOID
 REDIRECT_PORT = 8888
 REDIRECT_HOST = "localhost"
 REDIRECT_PATH = "/callback"
-REDIRECT_URI_HTTPS = f"https://{REDIRECT_HOST}:{REDIRECT_PORT}{REDIRECT_PATH}"
-REDIRECT_URI_HTTP = f"http://{REDIRECT_HOST}:{REDIRECT_PORT}{REDIRECT_PATH}"
-
-# Spotify allows http://localhost (loopback exception, RFC 8252).
-# Use HTTP for manual/SSH flows where no local server is needed.
-REDIRECT_URI = REDIRECT_URI_HTTPS  # used by the local HTTPS server flow
+REDIRECT_URI = f"https://{REDIRECT_HOST}:{REDIRECT_PORT}{REDIRECT_PATH}"
 
 _SUCCESS_HTML = b"""<!DOCTYPE html>
 <html><body style="font-family:sans-serif;text-align:center;padding:60px">
@@ -125,7 +120,7 @@ def _run_callback_server(code_holder: dict, cert_path: str, key_path: str):
     server.serve_forever()
 
 
-def _exchange_code(client_id: str, client_secret: str, code: str, redirect_uri: str = REDIRECT_URI) -> dict:
+def _exchange_code(client_id: str, client_secret: str, code: str) -> dict:
     resp = requests.post(
         "https://accounts.spotify.com/api/token",
         data={
@@ -183,14 +178,10 @@ def get_spotify_token(client_id: str, client_secret: str, scope: str) -> dict:
     )
 
     if _is_ssh_session():
-        # Use http://localhost — Spotify allows it for loopback (RFC 8252).
-        # Nothing needs to listen; user copies the redirect URL manually.
-        manual_auth_url = auth_url.replace(
-            urllib.parse.quote(REDIRECT_URI, safe=''),
-            urllib.parse.quote(REDIRECT_URI_HTTP, safe=''),
-        )
-        code = _manual_fallback(manual_auth_url)
-        return _exchange_code(client_id, client_secret, code, REDIRECT_URI_HTTP)
+        # No local server needed — user copies the redirect URL from their browser.
+        # Browser will show "connection refused" after auth; that's expected.
+        code = _manual_fallback(auth_url)
+        return _exchange_code(client_id, client_secret, code)
 
     cert_path, key_path = _generate_self_signed_cert()
     code_holder: dict = {}
