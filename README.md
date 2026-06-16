@@ -53,13 +53,13 @@ export SPOTIFY_CLIENT_SECRET=your_client_secret
 
 ### 4. YouTube Music auth setup
 
-`ytmusicapi` authenticates using a `browser.json` file generated from your browser's request headers.
-
-Run the following and follow the on-screen instructions (paste headers from a YouTube Music request):
+`ytmusicapi` is installed as part of `uv sync`. To generate the auth file it needs, run:
 
 ```bash
-ytmusicapi browser
+uv run ytmusicapi browser
 ```
+
+Follow the on-screen instructions (paste headers from a YouTube Music request):
 
 This creates `browser.json` in your current directory. Keep this file private — it contains your session credentials.
 
