@@ -84,15 +84,7 @@ def get_ytmusic_client():
         print("ERROR: browser.json not found in the current directory.")
         print("Run 'uv run ytmusicapi browser' to generate it, then try again.")
         sys.exit(1)
-    ytmusic = YTMusic(browser_json)
-    # Validate auth with a cheap test call
-    try:
-        ytmusic.search("test", filter="artists", limit=1)
-    except Exception as e:
-        print(f"ERROR: YouTube Music auth failed: {e}")
-        print("Your browser.json may be expired. Re-run 'uv run ytmusicapi browser' to refresh it.")
-        sys.exit(1)
-    return ytmusic
+    return YTMusic(browser_json)
 
 
 def fetch_spotify_followed_artists(sp, limit=None):
@@ -142,7 +134,9 @@ def find_youtube_artist(ytmusic, artist_name):
     try:
         results = ytmusic.search(artist_name, filter="artists")
     except Exception as e:
-        print(f"    WARNING: Search failed for '{artist_name}': {type(e).__name__}: {e}")
+        msg = str(e)
+        hint = " (browser.json may be expired — re-run 'uv run ytmusicapi browser')" if "Expecting value" in msg else ""
+        print(f"    WARNING: Search failed for '{artist_name}': {type(e).__name__}: {msg}{hint}")
         return None, None
 
     if not results:
