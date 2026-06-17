@@ -62,7 +62,8 @@ authenticated, and it uses OAuth (device flow), which works well over SSH.
 2. Under **APIs & Services → Library**, enable the **YouTube Data API v3**.
 3. Under **APIs & Services → Credentials**, click **Create Credentials → OAuth client ID**.
 4. Choose application type **TV and Limited Input devices**.
-5. Copy the resulting **Client ID** and **Client Secret** into your `.env`:
+5. Under **APIs & Services → OAuth consent screen**, set **User type** to **External**, then scroll to **Test users** and add the Google account you use for YouTube Music. (Your app stays in "Testing" status — that's fine for personal use, but only test users can authorize it. Skipping this causes an "app has not been approved" error.)
+6. Copy the resulting **Client ID** and **Client Secret** into your `.env`:
 
    ```
    YT_OAUTH_CLIENT_ID=your_google_oauth_client_id
