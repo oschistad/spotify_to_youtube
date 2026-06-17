@@ -54,31 +54,44 @@ export SPOTIFY_CLIENT_SECRET=your_client_secret
 ### 4. YouTube Music auth setup
 
 Searching YouTube Music needs no auth. Only the **subscribe** step is
-authenticated, and it uses OAuth (device flow), which works well over SSH.
+authenticated.
 
-**a. Create a Google OAuth client**
+> **Note:** As of mid-2026, YouTube made a server-side change that breaks
+> OAuth for write actions (subscribe, like, library edits) — see
+> [sigma67/ytmusicapi#676](https://github.com/sigma67/ytmusicapi/issues/676)
+> and [#921](https://github.com/sigma67/ytmusicapi/issues/921). Browser
+> auth (cookie-based) is currently the only method that works for
+> `subscribe_artists`, so that's what this project uses by default.
 
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create (or pick) a project.
-2. Under **APIs & Services → Library**, enable the **YouTube Data API v3**.
-3. Under **APIs & Services → Credentials**, click **Create Credentials → OAuth client ID**.
-4. Choose application type **TV and Limited Input devices**.
-5. Under **APIs & Services → OAuth consent screen**, set **User type** to **External**, then scroll to **Test users** and add the Google account you use for YouTube Music. (Your app stays in "Testing" status — that's fine for personal use, but only test users can authorize it. Skipping this causes an "app has not been approved" error.)
-6. Copy the resulting **Client ID** and **Client Secret** into your `.env`:
-
-   ```
-   YT_OAUTH_CLIENT_ID=your_google_oauth_client_id
-   YT_OAUTH_CLIENT_SECRET=your_google_oauth_client_secret
-   ```
-
-**b. Authorise your YouTube Music account**
+**Browser auth (current default)**
 
 ```bash
-uv run ytmusicapi oauth --client-id "$YT_OAUTH_CLIENT_ID" --client-secret "$YT_OAUTH_CLIENT_SECRET"
+uv run ytmusicapi browser
 ```
 
-This prints a URL and a code — open the URL on any device, sign in with the
-Google account tied to your YouTube Music, and enter the code. It writes
-`oauth.json` to the current directory. Keep this file private.
+Follow the on-screen instructions: open [music.youtube.com](https://music.youtube.com)
+in your browser (use a private/incognito window for longer-lived cookies),
+open DevTools (F12) → Network tab, reload, click any request to
+`music.youtube.com`, and paste the request headers as instructed by the
+prompt. This writes `browser.json` to the current directory. Keep this file
+private — it contains your session credentials, and they expire periodically
+(re-run this command if subscribing starts failing).
+
+**OAuth (fallback, currently broken upstream for subscribe)**
+
+The codebase also supports OAuth via `get_ytmusic_auth_client_oauth()` in
+`migrate.py`, kept around for when the upstream issue is fixed. To use it:
+swap `get_ytmusic_auth_client()` to call `get_ytmusic_auth_client_oauth()`
+instead of `get_ytmusic_auth_client_browser()`, then:
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/), create/pick a project, enable **YouTube Data API v3**.
+2. Under **Credentials**, create an **OAuth client ID** of type **TV and Limited Input devices**.
+3. Under **OAuth consent screen**, set **User type** to **External** and add your account under **Test users**.
+4. Put the client ID/secret in `.env` as `YT_OAUTH_CLIENT_ID` / `YT_OAUTH_CLIENT_SECRET`.
+5. Run:
+   ```bash
+   uv run ytmusicapi oauth --client-id "$YT_OAUTH_CLIENT_ID" --client-secret "$YT_OAUTH_CLIENT_SECRET"
+   ```
 
 ## Running the script
 

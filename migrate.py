@@ -86,11 +86,16 @@ def get_ytmusic_search_client():
     return YTMusic()
 
 
-def get_ytmusic_auth_client():
+def get_ytmusic_auth_client_oauth():
     """
     Authenticated YouTube Music client (OAuth) for subscribing.
     Requires an oauth.json created via 'uv run ytmusicapi oauth', plus the
     Google OAuth client credentials it was created with.
+
+    NOTE: As of mid-2026, YouTube's mutation endpoints (subscribe, like,
+    library edits) reject OAuth-authenticated requests with HTTP 400 due
+    to a server-side change — see sigma67/ytmusicapi#676/#921. Browser
+    auth (get_ytmusic_auth_client_browser) is the current working method.
     """
     oauth_json = os.path.join(os.getcwd(), "oauth.json")
     if not os.path.exists(oauth_json):
@@ -111,6 +116,24 @@ def get_ytmusic_auth_client():
             client_id=client_id, client_secret=client_secret
         ),
     )
+
+
+def get_ytmusic_auth_client_browser():
+    """
+    Authenticated YouTube Music client (browser cookies) for subscribing.
+    Requires a browser.json created via 'uv run ytmusicapi browser'.
+    Currently the only reliable auth method for subscribe/like/library edits.
+    """
+    browser_json = os.path.join(os.getcwd(), "browser.json")
+    if not os.path.exists(browser_json):
+        print("ERROR: browser.json not found in the current directory.")
+        print("Set up YouTube Music auth first — see the README 'YouTube Music auth' section.")
+        sys.exit(1)
+    return YTMusic(browser_json)
+
+
+def get_ytmusic_auth_client():
+    return get_ytmusic_auth_client_browser()
 
 
 def fetch_spotify_followed_artists(sp, limit=None):
@@ -220,8 +243,12 @@ def migrate(dry_run=False, limit=None):
                 print(f"    Subscribed!")
                 subscribed.append((name, matched_name))
             except Exception as e:
-                print(f"    ERROR subscribing: {e}")
-                failed_subscribe.append((name, str(e)))
+                detail = str(e)
+                resp = getattr(e, "response", None)
+                if resp is not None:
+                    detail += f" | body: {resp.text[:500]}"
+                print(f"    ERROR subscribing: {detail}")
+                failed_subscribe.append((name, detail))
 
     # Summary
     print("\n" + "=" * 60)
