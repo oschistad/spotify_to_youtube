@@ -18,19 +18,41 @@ from ytmusicapi import YTMusic
 from ytmusicapi.constants import YTM_BASE_API
 
 
+def redact(key, value):
+    if key.lower() in ("authorization", "cookie"):
+        return f"{value[:20]}...({len(value)} chars)"
+    return value
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: uv run python diagnose_subscribe.py <channelId>")
         sys.exit(1)
     channel_id = sys.argv[1]
 
-    browser_json = os.path.join(os.getcwd(), "browser.json")
-    if not os.path.exists(browser_json):
+    browser_json_path = os.path.join(os.getcwd(), "browser.json")
+    if not os.path.exists(browser_json_path):
         print("ERROR: browser.json not found.")
         sys.exit(1)
 
+    with open(browser_json_path) as f:
+        raw_headers = json.load(f)
+    print("=== raw browser.json keys ===")
+    for k, v in raw_headers.items():
+        print(f"  {k}: {redact(k, str(v))}")
+    print()
+
     brand_account_id = os.environ.get("YT_BRAND_ACCOUNT_ID")
-    yt = YTMusic(browser_json, user=brand_account_id)
+    yt = YTMusic(browser_json_path, user=brand_account_id)
+
+    print("=== yt.auth_type ===")
+    print(f"  {yt.auth_type}")
+    print()
+
+    print("=== headers actually sent (yt.headers) ===")
+    for k, v in yt.headers.items():
+        print(f"  {k}: {redact(k, str(v))}")
+    print()
 
     body = {"channelIds": [channel_id]}
     body.update(yt.context)
