@@ -77,6 +77,20 @@ prompt. This writes `browser.json` to the current directory. Keep this file
 private — it contains your session credentials, and they expire periodically
 (re-run this command if subscribing starts failing).
 
+**Brand accounts**
+
+If `subscribe_artists` still fails with `HTTP 400: Bad Request` after a
+fresh `browser.json`, your YouTube Music account may be a **brand
+account** (a separate channel identity layered on your Google account) —
+a known cause of this error. Go to
+[myaccount.google.com/brandaccounts](https://myaccount.google.com/brandaccounts),
+select the account, and copy the ID from the URL
+(`https://myaccount.google.com/b/<user_id>/`). Set it in `.env`:
+
+```
+YT_BRAND_ACCOUNT_ID=<user_id>
+```
+
 **OAuth (fallback, currently broken upstream for subscribe)**
 
 The codebase also supports OAuth via `get_ytmusic_auth_client_oauth()` in

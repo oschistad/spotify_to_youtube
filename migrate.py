@@ -123,13 +123,20 @@ def get_ytmusic_auth_client_browser():
     Authenticated YouTube Music client (browser cookies) for subscribing.
     Requires a browser.json created via 'uv run ytmusicapi browser'.
     Currently the only reliable auth method for subscribe/like/library edits.
+
+    If your YouTube Music account is a brand account (a separate channel
+    identity layered on your Google account — common cause of subscribe
+    returning HTTP 400), set YT_BRAND_ACCOUNT_ID to its user ID. Find it at
+    https://myaccount.google.com/brandaccounts — select the account, and
+    the ID is in the URL: https://myaccount.google.com/b/<user_id>/
     """
     browser_json = os.path.join(os.getcwd(), "browser.json")
     if not os.path.exists(browser_json):
         print("ERROR: browser.json not found in the current directory.")
         print("Set up YouTube Music auth first — see the README 'YouTube Music auth' section.")
         sys.exit(1)
-    return YTMusic(browser_json)
+    brand_account_id = os.environ.get("YT_BRAND_ACCOUNT_ID")
+    return YTMusic(browser_json, user=brand_account_id)
 
 
 def get_ytmusic_auth_client():
